@@ -1,0 +1,18 @@
+body{ font-family: Arial, Helvetica, sans-serif; margin:0; background:#f5f7fa; color:#222;}
+.container{ max-width:1000px; margin:20px auto; padding:20px; background:white; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.nav{ display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:#153a5b; color:white;}
+.nav .brand{ color:white; text-decoration:none; font-weight:700; font-size:18px;}
+.nav a{ color:white; margin-right:10px; text-decoration:none;}
+.btn{ padding:8px 12px; border-radius:6px; border:none; cursor:pointer;}
+.btn.primary{ background:#1f8ef1; color:white;}
+.btn.link{ background:transparent; color:white; border:1px solid rgba(255,255,255,0.15); margin-left:8px;}
+.form{ max-width:640px; margin:20px 0; }
+.form label{ display:block; margin:8px 0 4px;}
+.form input[type='text'], .form input[type='email'], .form textarea{ width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;}
+.form input[type='file']{ padding:8px;}
+.card{ padding:12px; border:1px solid #eee; border-radius:6px; margin-bottom:12px;}
+.submission{ display:flex; gap:12px; align-items:flex-start;}
+.submission img{ width:180px; border-radius:6px; border:1px solid #ddd;}
+.list{ margin-top:12px;}
+.controls{ margin-top:8px;}
+.canvas-wrap{ border:1px solid #ddd; padding:8px; border-radius:6px; background:#fafafa; }
