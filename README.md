@@ -1,53 +1,64 @@
-OralVis MERN App (monorepo)
-===========================
+# OralVis - Dental Screening Platform
 
-Structure:
-/backend - Express + MongoDB API
-/frontend - React app (create-react-app style)
+A MERN stack application for dental health screening with AI-powered annotations and PDF reporting.
 
-How to run locally
-------------------
+## Features
 
-1. Install MongoDB and run it locally (default URI used in .env):
-   - Database name will be 'oralvis' (mongodb://localhost:27017/oralvis).
-   - Collections created by the app: 'users' and 'submissions' (Mongoose creates them automatically).
+- Multi-image upload (upper, front, lower teeth views)
+- AI-powered auto-annotation using Python
+- Manual annotation tools
+- PDF report generation
+- User authentication (Admin/Patient roles)
+- Cloudinary integration for image storage
 
-2. Configure Cloudinary:
-   - Create a Cloudinary account and put credentials into backend/.env:
-     CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
-   - If you don't want Cloudinary, you may still run the app, but uploads will fail.
+## Quick Start
 
-3. Backend:
+1. **Prerequisites**
+   - Node.js 16+
+   - MongoDB 5.0+
+   - Python 3.8+ (for auto-annotation)
+   - Cloudinary account
+
+2. **Setup**
+   ```bash
+   # Clone and install
+   git clone https://github.com/yourusername/oralvis.git
+   cd oralvis
+   
+   # Backend
    cd backend
    npm install
-   npm run dev
-   - This starts the server on PORT (default 5000). The .env provided contains the MONGODB_URI.
-
-4. Frontend:
-   cd frontend
+   cp .env.example .env  # Update with your credentials
+   
+   # Frontend
+   cd ../frontend
    npm install
-   npm start
-   - Open http://localhost:3000
+   ```
 
-Default admin:
- - Email: admin@oralvis.com
- - Password: oraladmin
-(Seeded automatically when backend first connects to MongoDB)
+3. **Environment Variables**
+   Create `.env` in `/backend` with:
+   ```
+   MONGODB_URI=mongodb://localhost:27017/oralvis
+   JWT_SECRET=your_jwt_secret
+   CLOUDINARY_CLOUD_NAME=your_cloud_name
+   CLOUDINARY_API_KEY=your_api_key
+   CLOUDINARY_API_SECRET=your_api_secret
+   ```
 
-API summary
------------
-- POST /auth/register {name,email,password}
-- POST /auth/login {email,password} -> { token, user }
-- POST /auth/logout
-- POST /api/submissions (authenticated patient) { patientName, patientID, email, note, image (dataURL) }
-- GET  /api/submissions (admin)
-- GET  /api/submissions/mine (patient)
-- GET  /api/submissions/:id (admin or owner)
-- PUT  /api/submissions/:id/annotate (admin) { annotationData, annotatedImage (dataURL) }
-- POST /api/submissions/:id/report (admin) -> generates PDF and uploads to Cloudinary.
+4. **Run**
+   ```bash
+   # In separate terminals:
+   cd backend && npm run dev   # Backend on http://localhost:5000
+   cd frontend && npm start    # Frontend on http://localhost:3000
+   ```
 
-Where to create DB and collections
----------------------------------
-- Run MongoDB locally (e.g., `mongod`).
-- The app uses MONGODB_URI from backend/.env. With the provided URI `mongodb://localhost:27017/oralvis` the database `oralvis` will be created automatically.
-- Collections `users` and `submissions` will be created when you first create a user and upload a submission.
+## Default Credentials
+- **Admin**: admin@oralvis.com / oraladmin
+- New users can register as patients
+
+## Tech Stack
+- **Frontend**: React, React-PDF
+- **Backend**: Node.js, Express, MongoDB, Mongoose
+- **AI**: Python 3.8+
+- **Storage**: Cloudinary
+- **Authentication**: JWT
