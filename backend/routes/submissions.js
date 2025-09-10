@@ -11,6 +11,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { PDFDocument } = require('pdf-lib');
 
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -240,6 +241,7 @@ router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
 
     const uploaded = await cloudinary.uploader.upload(dataUri, {
       resource_type: "raw",
+      type: "upload",          // add this explicitly
       folder: "oralvis-reports",
       public_id: `report_${sub._id}.pdf`,
       format: "pdf"
@@ -251,6 +253,37 @@ router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
     res.json(sub);
   }catch(e){
     console.error('report error', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+// ---------------- PDF download route (fetches from Cloudinary) ----------------
+router.get('/:id/report/download', requireAuth, async (req, res) => {
+  try {
+    const sub = await Submission.findById(req.params.id);
+    if (!sub || !sub.pdfUrl) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+
+    // Use the exact public_id used at upload
+    const publicId = `oralvis-reports/report_${sub._id}.pdf`;
+
+    // generate signed URL
+    const signedUrl = cloudinary.url(publicId, {
+      resource_type: 'raw',
+      type: 'upload',     // must match upload type
+      sign_url: true,
+      secure: true
+    });
+
+    // fetch the file with axios
+    const resp = await axios.get(signedUrl, { responseType: 'arraybuffer' });
+    const pdfBuffer = Buffer.from(resp.data);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="report_${sub._id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (e) {
+    console.error('report download error', e);
     res.status(500).json({ message: e.message });
   }
 });
