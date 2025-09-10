@@ -1,9 +1,14 @@
+// backend/routes/submissions.js
 const express = require('express');
 const router = express.Router();
 const Submission = require('../models/Submission');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const cloudinary = require('cloudinary').v2;
-const axios = require('axios');
+const axios = require('axios').default;
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
 const { PDFDocument } = require('pdf-lib');
 
 cloudinary.config({
@@ -12,93 +17,191 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Patient upload
+// helper to write temp file from URL
+async function downloadToFile(url, outPath){
+  const resp = await axios.get(url, { responseType: 'arraybuffer' });
+  await fs.promises.writeFile(outPath, Buffer.from(resp.data), 'binary');
+  return outPath;
+}
+
+// upload dataUri or file buffer to cloudinary (auto detect)
+async function uploadDataUrl(dataUrl, options = {}){
+  // dataUrl is like data:image/png;base64,...
+  return await cloudinary.uploader.upload(dataUrl, options);
+}
+
+// ---------- PATIENT upload (3 images, image fields are dataURLs) ----------
 router.post('/', requireAuth, async (req,res)=>{
   try{
-    // expecting: name, patientID, email, note, image (dataURL or multipart file)
-    const { patientName, patientID, email, note, image } = req.body;
-    if(!patientName || !image) return res.status(400).json({ message: 'Missing required fields' });
-    // Image should be dataURL (base64) sent from frontend
-    const uploaded = await cloudinary.uploader.upload(image, { folder: 'oralvis-submissions' });
+    const { patientName, patientID, email, note, imageUpper, imageFront, imageLower } = req.body;
+    if(!patientName || !imageUpper || !imageFront || !imageLower) return res.status(400).json({ message: 'Missing fields' });
+
+    const up1 = await cloudinary.uploader.upload(imageUpper, { folder: 'oralvis-submissions' });
+    const up2 = await cloudinary.uploader.upload(imageFront, { folder: 'oralvis-submissions' });
+    const up3 = await cloudinary.uploader.upload(imageLower, { folder: 'oralvis-submissions' });
+
     const sub = await Submission.create({
       patientName, patientID, email, note,
-      imageUrl: uploaded.secure_url, createdBy: req.user._id, status: 'uploaded'
+      imageUpperUrl: up1.secure_url,
+      imageFrontUrl: up2.secure_url,
+      imageLowerUrl: up3.secure_url,
+      createdBy: req.user._id,
+      status: 'uploaded'
     });
     res.json(sub);
   }catch(e){
+    console.error(e);
     res.status(500).json({ message: e.message });
   }
 });
 
-// Get all submissions (admin)
+// get all (admin)
 router.get('/', requireAuth, requireAdmin, async (req,res)=>{
   const subs = await Submission.find().sort({ createdAt: -1 });
   res.json(subs);
 });
 
-// Get my submissions (patient)
+// get mine (patient)
 router.get('/mine', requireAuth, async (req,res)=>{
   const subs = await Submission.find({ createdBy: req.user._id }).sort({ createdAt: -1 });
   res.json(subs);
 });
 
-// Get single
+// get single
 router.get('/:id', requireAuth, async (req,res)=>{
   const sub = await Submission.findById(req.params.id);
   if(!sub) return res.status(404).json({ message: 'Not found' });
-  // access control
   if(req.user.role !== 'admin' && (!sub.createdBy || sub.createdBy.toString() !== req.user._id.toString()))
     return res.status(403).json({ message: 'Forbidden' });
   res.json(sub);
 });
 
-// Annotate (admin): expects annotationData (JSON) and annotatedImage (dataURL)
+// manual annotate (keeps previous behavior) - admin uploads annotated image(s)
 router.put('/:id/annotate', requireAuth, requireAdmin, async (req,res)=>{
   try{
-    const { annotationData, annotatedImage } = req.body;
+    const { annotationData, annotatedUpper, annotatedFront, annotatedLower } = req.body;
     const sub = await Submission.findById(req.params.id);
     if(!sub) return res.status(404).json({ message: 'Not found' });
-    let annUrl = null;
-    if(annotatedImage){
-      const uploaded = await cloudinary.uploader.upload(annotatedImage, { folder: 'oralvis-annotated' });
-      annUrl = uploaded.secure_url;
+
+    if(annotatedUpper){
+      const up = await cloudinary.uploader.upload(annotatedUpper, { folder: 'oralvis-annotated' });
+      sub.annotatedUpperUrl = up.secure_url;
+    }
+    if(annotatedFront){
+      const up = await cloudinary.uploader.upload(annotatedFront, { folder: 'oralvis-annotated' });
+      sub.annotatedFrontUrl = up.secure_url;
+    }
+    if(annotatedLower){
+      const up = await cloudinary.uploader.upload(annotatedLower, { folder: 'oralvis-annotated' });
+      sub.annotatedLowerUrl = up.secure_url;
     }
     sub.annotationData = annotationData || sub.annotationData;
-    sub.annotatedImageUrl = annUrl || sub.annotatedImageUrl;
     sub.status = 'annotated';
     await sub.save();
     res.json(sub);
+  }catch(e){ res.status(500).json({ message: e.message }); }
+});
+
+// ---------------- NEW ROUTE: auto-annotate via Python script ----------------
+// POST /api/submissions/:id/auto-annotate
+router.post('/:id/auto-annotate', requireAuth, requireAdmin, async (req,res)=>{
+  try{
+    const sub = await Submission.findById(req.params.id);
+    if(!sub) return res.status(404).json({ message: 'Not found' });
+
+    // create temp files
+    const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'oralvis-'));
+    const inUpper = path.join(tmpdir, 'in_upper.' + (sub.imageUpperUrl.split('.').pop().split('?')[0] || 'jpg'));
+    const inFront = path.join(tmpdir, 'in_front.' + (sub.imageFrontUrl.split('.').pop().split('?')[0] || 'jpg'));
+    const inLower = path.join(tmpdir, 'in_lower.' + (sub.imageLowerUrl.split('.').pop().split('?')[0] || 'jpg'));
+    await downloadToFile(sub.imageUpperUrl, inUpper);
+    await downloadToFile(sub.imageFrontUrl, inFront);
+    await downloadToFile(sub.imageLowerUrl, inLower);
+
+    const outUpper = path.join(tmpdir, 'out_upper.png');
+    const outFront = path.join(tmpdir, 'out_front.png');
+    const outLower = path.join(tmpdir, 'out_lower.png');
+
+    // spawn python process
+    // assumes python is available on PATH as 'python' or 'python3'
+    const pythonPath = process.env.PYTHON_BIN || 'python';
+    const scriptPath = path.join(__dirname, '..', 'python', 'app.py');
+
+    await new Promise((resolve, reject) => {
+      const args = [
+        scriptPath,
+        '--in_upper', inUpper,
+        '--in_front', inFront,
+        '--in_lower', inLower,
+        '--out_upper', outUpper,
+        '--out_front', outFront,
+        '--out_lower', outLower
+      ];
+      const child = spawn(pythonPath, args, { stdio: 'inherit' });
+      child.on('error', err => reject(err));
+      child.on('close', code => {
+        if(code === 0) resolve();
+        else reject(new Error('Python annotator exited with code ' + code));
+      });
+    });
+
+    // upload annotated files to cloudinary
+    const up1 = await cloudinary.uploader.upload(outUpper, { folder: 'oralvis-annotated' });
+    const up2 = await cloudinary.uploader.upload(outFront, { folder: 'oralvis-annotated' });
+    const up3 = await cloudinary.uploader.upload(outLower, { folder: 'oralvis-annotated' });
+
+    // update submission
+    sub.annotatedUpperUrl = up1.secure_url;
+    sub.annotatedFrontUrl = up2.secure_url;
+    sub.annotatedLowerUrl = up3.secure_url;
+    sub.status = 'annotated';
+    await sub.save();
+
+    // cleanup temp dir
+    try {
+      fs.unlinkSync(inUpper); fs.unlinkSync(inFront); fs.unlinkSync(inLower);
+      fs.unlinkSync(outUpper); fs.unlinkSync(outFront); fs.unlinkSync(outLower);
+      fs.rmdirSync(tmpdir);
+    } catch(e){ /* ignore cleanup errors */ }
+
+    res.json(sub);
   }catch(e){
+    console.error('Auto-annotate error', e);
     res.status(500).json({ message: e.message });
   }
 });
 
-// Generate PDF (admin) - creates PDF with details and both images, uploads to Cloudinary (raw)
+// ---------------- PDF generation endpoint (server-side) ----------------
+// Accepts optional posted 'pdfData' (base64) OR will create server-side using pdf-lib
 router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
   try{
     const sub = await Submission.findById(req.params.id);
     if(!sub) return res.status(404).json({ message: 'Not found' });
-    // create PDF with pdf-lib
+
+    // If client sends pdfData (base64 data URL) we upload it directly
+    if(req.body && req.body.pdfBase64){
+      const dataUri = req.body.pdfBase64; // data:application/pdf;base64,...
+      const uploaded = await cloudinary.uploader.upload(dataUri, { resource_type: 'raw', folder: 'oralvis-reports' });
+      sub.pdfUrl = uploaded.secure_url;
+      sub.status = 'reported';
+      await sub.save();
+      return res.json(sub);
+    }
+
+    // otherwise generate server-side with pdf-lib (simple layout)
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595, 842]);
     const { width, height } = page.getSize();
-    const left = 40;
     let y = height - 60;
-    page.drawText('OralVis Report', { x: left, y, size: 18 });
+    page.drawText('Oral Health Screening Report', { x: 40, y, size: 18 });
+    y -= 28;
+    page.drawText(`Name: ${sub.patientName}`, { x: 40, y, size: 12 });
+    page.drawText(`Patient ID: ${sub.patientID || ''}`, { x: 300, y, size: 12 });
+    y -= 20;
+    page.drawText(`Notes: ${sub.note || ''}`, { x: 40, y, size: 11, maxWidth: 520 });
     y -= 30;
-    page.drawText(`Patient Name: ${sub.patientName}`, { x: left, y, size: 12 });
-    y -= 18;
-    page.drawText(`Patient ID: ${sub.patientID || ''}`, { x: left, y, size: 12 });
-    y -= 18;
-    page.drawText(`Email: ${sub.email || ''}`, { x: left, y, size: 12 });
-    y -= 18;
-    page.drawText(`Uploaded: ${sub.createdAt.toISOString()}`, { x: left, y, size: 10 });
-    y -= 22;
-    page.drawText('Notes:', { x: left, y, size: 12 });
-    y -= 16;
-    const note = (sub.note || '').slice(0, 1000);
-    page.drawText(note, { x: left, y, size: 10, maxWidth: 520 });
-    // embed images if present
+
+    // embed images if present - left column arrangement
     const embedImageFromUrl = async (url) => {
       if(!url) return null;
       const resp = await axios.get(url, { responseType: 'arraybuffer' });
@@ -106,31 +209,49 @@ router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
       if(type === 'image/png') return await pdfDoc.embedPng(resp.data);
       return await pdfDoc.embedJpg(resp.data);
     };
-    const origImg = await embedImageFromUrl(sub.imageUrl);
-    if(origImg){
-      y -= 220;
-      page.drawImage(origImg, { x: left, y, width: 250, height: 200 });
-    }
-    if(sub.annotatedImageUrl){
-      const annImg = await embedImageFromUrl(sub.annotatedImageUrl);
-      if(annImg){
-        page.drawImage(annImg, { x: left + 280, y: y, width: 250, height: 200 });
-      }
-    }
+
+    const imgUpper = await embedImageFromUrl(sub.imageUpperUrl);
+    const imgFront = await embedImageFromUrl(sub.imageFrontUrl);
+    const imgLower = await embedImageFromUrl(sub.imageLowerUrl);
+    const annUpper = await embedImageFromUrl(sub.annotatedUpperUrl);
+    const annFront = await embedImageFromUrl(sub.annotatedFrontUrl);
+    const annLower = await embedImageFromUrl(sub.annotatedLowerUrl);
+
+    const rowY = y - 200;
+    const imgW = 160;
+    const imgH = 120;
+    const gap = 20;
+    let x = 40;
+
+    if(imgUpper) page.drawImage(imgUpper, { x, y: rowY, width: imgW, height: imgH });
+    x += imgW + gap;
+    if(imgFront) page.drawImage(imgFront, { x, y: rowY, width: imgW, height: imgH });
+    x += imgW + gap;
+    if(imgLower) page.drawImage(imgLower, { x, y: rowY, width: imgW, height: imgH });
+
+    // annotated row below
+    let annY = rowY - imgH - 20;
+    x = 40;
+    if(annUpper) page.drawImage(annUpper, { x, y: annY, width: imgW, height: imgH });
+    x += imgW + gap;
+    if(annFront) page.drawImage(annFront, { x, y: annY, width: imgW, height: imgH });
+    x += imgW + gap;
+    if(annLower) page.drawImage(annLower, { x, y: annY, width: imgW, height: imgH });
+
     const pdfBytes = await pdfDoc.save();
-    // upload to Cloudinary as raw
-    const uploadResult = await cloudinary.uploader.upload_stream({ resource_type: 'raw', folder: 'oralvis-reports' }, (err,result)=>{
-      if(err) throw err;
-      return result;
-    });
-    // cloudinary.uploader.upload_stream returns a writable stream; workaround: use uploader.upload with data uri via buffer
     const dataUri = 'data:application/pdf;base64,' + Buffer.from(pdfBytes).toString('base64');
-    const uploaded = await cloudinary.uploader.upload(dataUri, { resource_type: 'raw', folder: 'oralvis-reports' });
+    const uploaded = await cloudinary.uploader.upload(dataUri, {
+      resource_type: "raw",    // <-- important
+      folder: "oralvis-reports",
+      public_id: `report_${sub._id}`
+    });
+
     sub.pdfUrl = uploaded.secure_url;
     sub.status = 'reported';
     await sub.save();
     res.json(sub);
   }catch(e){
+    console.error('report error', e);
     res.status(500).json({ message: e.message });
   }
 });
