@@ -173,77 +173,76 @@ router.post('/:id/auto-annotate', requireAuth, requireAdmin, async (req,res)=>{
 
 // ---------------- PDF generation endpoint (server-side) ----------------
 // Accepts optional posted 'pdfData' (base64) OR will create server-side using pdf-lib
+// ---------------- PDF generation endpoint (server-side, after annotation only) ----------------
 router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
   try{
     const sub = await Submission.findById(req.params.id);
     if(!sub) return res.status(404).json({ message: 'Not found' });
 
-    // If client sends pdfData (base64 data URL) we upload it directly
-    if(req.body && req.body.pdfBase64){
-      const dataUri = req.body.pdfBase64; // data:application/pdf;base64,...
-      const uploaded = await cloudinary.uploader.upload(dataUri, { resource_type: 'raw', folder: 'oralvis-reports' });
-      sub.pdfUrl = uploaded.secure_url;
-      sub.status = 'reported';
-      await sub.save();
-      return res.json(sub);
+    if(sub.status !== 'annotated'){
+      return res.status(400).json({ message: 'Report can only be generated after annotation' });
     }
 
-    // otherwise generate server-side with pdf-lib (simple layout)
+    // Generate PDF with only annotated images
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595, 842]);
     const { width, height } = page.getSize();
     let y = height - 60;
-    page.drawText('Oral Health Screening Report', { x: 40, y, size: 18 });
-    y -= 28;
+
+    page.drawText('Oral Health Screening Report', { x: 160, y, size: 20 });
+    y -= 30;
     page.drawText(`Name: ${sub.patientName}`, { x: 40, y, size: 12 });
     page.drawText(`Patient ID: ${sub.patientID || ''}`, { x: 300, y, size: 12 });
     y -= 20;
-    page.drawText(`Notes: ${sub.note || ''}`, { x: 40, y, size: 11, maxWidth: 520 });
-    y -= 30;
+    page.drawText(`Date: ${new Date(sub.updatedAt).toLocaleDateString()}`, { x: 40, y, size: 12 });
+    y -= 40;
 
-    // embed images if present - left column arrangement
     const embedImageFromUrl = async (url) => {
       if(!url) return null;
       const resp = await axios.get(url, { responseType: 'arraybuffer' });
       const type = resp.headers['content-type'];
-      if(type === 'image/png') return await pdfDoc.embedPng(resp.data);
+      if(type.includes('png')) return await pdfDoc.embedPng(resp.data);
       return await pdfDoc.embedJpg(resp.data);
     };
 
-    const imgUpper = await embedImageFromUrl(sub.imageUpperUrl);
-    const imgFront = await embedImageFromUrl(sub.imageFrontUrl);
-    const imgLower = await embedImageFromUrl(sub.imageLowerUrl);
+    // Use ONLY annotated images
     const annUpper = await embedImageFromUrl(sub.annotatedUpperUrl);
     const annFront = await embedImageFromUrl(sub.annotatedFrontUrl);
     const annLower = await embedImageFromUrl(sub.annotatedLowerUrl);
 
-    const rowY = y - 200;
-    const imgW = 160;
-    const imgH = 120;
-    const gap = 20;
+    const imgW = 160, imgH = 120, gap = 20;
     let x = 40;
 
-    if(imgUpper) page.drawImage(imgUpper, { x, y: rowY, width: imgW, height: imgH });
+    if(annUpper) page.drawImage(annUpper, { x, y: y- imgH, width: imgW, height: imgH });
     x += imgW + gap;
-    if(imgFront) page.drawImage(imgFront, { x, y: rowY, width: imgW, height: imgH });
+    if(annFront) page.drawImage(annFront, { x, y: y- imgH, width: imgW, height: imgH });
     x += imgW + gap;
-    if(imgLower) page.drawImage(imgLower, { x, y: rowY, width: imgW, height: imgH });
+    if(annLower) page.drawImage(annLower, { x, y: y- imgH, width: imgW, height: imgH });
 
-    // annotated row below
-    let annY = rowY - imgH - 20;
-    x = 40;
-    if(annUpper) page.drawImage(annUpper, { x, y: annY, width: imgW, height: imgH });
-    x += imgW + gap;
-    if(annFront) page.drawImage(annFront, { x, y: annY, width: imgW, height: imgH });
-    x += imgW + gap;
-    if(annLower) page.drawImage(annLower, { x, y: annY, width: imgW, height: imgH });
+    // Add treatment recommendations block
+    y -= imgH + 60;
+    page.drawText('TREATMENT RECOMMENDATIONS:', { x: 40, y, size: 12 });
+    y -= 20;
+    page.drawText('• Inflamed/Red gums : Scaling', { x: 60, y, size: 10 });
+    y -= 15;
+    page.drawText('• Malaligned : Braces or Clear Aligner', { x: 60, y, size: 10 });
+    y -= 15;
+    page.drawText('• Receded gums : Gum Surgery', { x: 60, y, size: 10 });
+    y -= 15;
+    page.drawText('• Stains : Cleaning and polishing', { x: 60, y, size: 10 });
+    y -= 15;
+    page.drawText('• Attrition : Filling/Night Guard', { x: 60, y, size: 10 });
+    y -= 15;
+    page.drawText('• Crowns : Get loose/broken crowns checked', { x: 60, y, size: 10 });
 
     const pdfBytes = await pdfDoc.save();
     const dataUri = 'data:application/pdf;base64,' + Buffer.from(pdfBytes).toString('base64');
+
     const uploaded = await cloudinary.uploader.upload(dataUri, {
-      resource_type: "raw",    // <-- important
+      resource_type: "raw",
       folder: "oralvis-reports",
-      public_id: `report_${sub._id}`
+      public_id: `report_${sub._id}.pdf`,
+      format: "pdf"
     });
 
     sub.pdfUrl = uploaded.secure_url;
@@ -255,5 +254,6 @@ router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
     res.status(500).json({ message: e.message });
   }
 });
+
 
 module.exports = router;
