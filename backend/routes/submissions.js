@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
 
 cloudinary.config({
@@ -104,13 +104,11 @@ router.put('/:id/annotate', requireAuth, requireAdmin, async (req,res)=>{
 });
 
 // ---------------- NEW ROUTE: auto-annotate via Python script ----------------
-// POST /api/submissions/:id/auto-annotate
 router.post('/:id/auto-annotate', requireAuth, requireAdmin, async (req,res)=>{
   try{
     const sub = await Submission.findById(req.params.id);
     if(!sub) return res.status(404).json({ message: 'Not found' });
 
-    // create temp files
     const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'oralvis-'));
     const inUpper = path.join(tmpdir, 'in_upper.' + (sub.imageUpperUrl.split('.').pop().split('?')[0] || 'jpg'));
     const inFront = path.join(tmpdir, 'in_front.' + (sub.imageFrontUrl.split('.').pop().split('?')[0] || 'jpg'));
@@ -123,21 +121,11 @@ router.post('/:id/auto-annotate', requireAuth, requireAdmin, async (req,res)=>{
     const outFront = path.join(tmpdir, 'out_front.png');
     const outLower = path.join(tmpdir, 'out_lower.png');
 
-    // spawn python process
-    // assumes python is available on PATH as 'python' or 'python3'
     const pythonPath = process.env.PYTHON_BIN || 'python';
     const scriptPath = path.join(__dirname, '..', 'python', 'app.py');
 
     await new Promise((resolve, reject) => {
-      const args = [
-        scriptPath,
-        '--in_upper', inUpper,
-        '--in_front', inFront,
-        '--in_lower', inLower,
-        '--out_upper', outUpper,
-        '--out_front', outFront,
-        '--out_lower', outLower
-      ];
+      const args = [ scriptPath, '--in_upper', inUpper, '--in_front', inFront, '--in_lower', inLower, '--out_upper', outUpper, '--out_front', outFront, '--out_lower', outLower ];
       const child = spawn(pythonPath, args, { stdio: 'inherit' });
       child.on('error', err => reject(err));
       child.on('close', code => {
@@ -146,19 +134,16 @@ router.post('/:id/auto-annotate', requireAuth, requireAdmin, async (req,res)=>{
       });
     });
 
-    // upload annotated files to cloudinary
     const up1 = await cloudinary.uploader.upload(outUpper, { folder: 'oralvis-annotated' });
     const up2 = await cloudinary.uploader.upload(outFront, { folder: 'oralvis-annotated' });
     const up3 = await cloudinary.uploader.upload(outLower, { folder: 'oralvis-annotated' });
 
-    // update submission
     sub.annotatedUpperUrl = up1.secure_url;
     sub.annotatedFrontUrl = up2.secure_url;
     sub.annotatedLowerUrl = up3.secure_url;
     sub.status = 'annotated';
     await sub.save();
 
-    // cleanup temp dir
     try {
       fs.unlinkSync(inUpper); fs.unlinkSync(inFront); fs.unlinkSync(inLower);
       fs.unlinkSync(outUpper); fs.unlinkSync(outFront); fs.unlinkSync(outLower);
@@ -172,9 +157,7 @@ router.post('/:id/auto-annotate', requireAuth, requireAdmin, async (req,res)=>{
   }
 });
 
-// ---------------- PDF generation endpoint (server-side) ----------------
-// Accepts optional posted 'pdfData' (base64) OR will create server-side using pdf-lib
-// ---------------- PDF generation endpoint (server-side, after annotation only) ----------------
+// ---------------- FINALIZED PDF generation endpoint ----------------
 router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
   try{
     const sub = await Submission.findById(req.params.id);
@@ -184,18 +167,24 @@ router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
       return res.status(400).json({ message: 'Report can only be generated after annotation' });
     }
 
-    // Generate PDF with only annotated images
+    // PDF Generation
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595, 842]);
     const { width, height } = page.getSize();
-    let y = height - 60;
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    // Header
+    const headerColor = rgb(155/255, 89/255, 182/255);
+    page.drawRectangle({ x: 0, y: height - 80, width, height: 80, color: headerColor });
+    page.drawText('Oral Health Screening Report', { x: 150, y: height - 50, font: boldFont, size: 22, color: rgb(1, 1, 1) });
 
-    page.drawText('Oral Health Screening Report', { x: 160, y, size: 20 });
-    y -= 30;
-    page.drawText(`Name: ${sub.patientName}`, { x: 40, y, size: 12 });
-    page.drawText(`Patient ID: ${sub.patientID || ''}`, { x: 300, y, size: 12 });
+    let y = height - 120;
+    // Patient Details
+    page.drawText(`Name: ${sub.patientName}`, { x: 40, y, font, size: 12 });
+    page.drawText(`Patient ID: ${sub.patientID || ''}`, { x: 300, y, font, size: 12 });
     y -= 20;
-    page.drawText(`Date: ${new Date(sub.updatedAt).toLocaleDateString()}`, { x: 40, y, size: 12 });
+    page.drawText(`Date: ${new Date(sub.createdAt).toLocaleDateString()}`, { x: 40, y, font, size: 12 });
     y -= 40;
 
     const embedImageFromUrl = async (url) => {
@@ -206,87 +195,47 @@ router.post('/:id/report', requireAuth, requireAdmin, async (req,res)=>{
       return await pdfDoc.embedJpg(resp.data);
     };
 
-    // Use ONLY annotated images
     const annUpper = await embedImageFromUrl(sub.annotatedUpperUrl);
     const annFront = await embedImageFromUrl(sub.annotatedFrontUrl);
     const annLower = await embedImageFromUrl(sub.annotatedLowerUrl);
 
-    const imgW = 160, imgH = 120, gap = 20;
+    y -= 140;
+    const imgW = 160, imgH = 120, gap = (width - 80 - 3*imgW) / 2;
     let x = 40;
-
-    if(annUpper) page.drawImage(annUpper, { x, y: y- imgH, width: imgW, height: imgH });
+    if(annUpper) page.drawImage(annUpper, { x, y, width: imgW, height: imgH });
     x += imgW + gap;
-    if(annFront) page.drawImage(annFront, { x, y: y- imgH, width: imgW, height: imgH });
+    if(annFront) page.drawImage(annFront, { x, y, width: imgW, height: imgH });
     x += imgW + gap;
-    if(annLower) page.drawImage(annLower, { x, y: y- imgH, width: imgW, height: imgH });
+    if(annLower) page.drawImage(annLower, { x, y, width: imgW, height: imgH });
 
-    // Add treatment recommendations block
-    y -= imgH + 60;
-    page.drawText('TREATMENT RECOMMENDATIONS:', { x: 40, y, size: 12 });
+    y -= 40;
+    page.drawText('TREATMENT RECOMMENDATIONS:', { x: 40, y, font: boldFont, size: 12 });
     y -= 20;
-    page.drawText('• Inflamed/Red gums : Scaling', { x: 60, y, size: 10 });
-    y -= 15;
-    page.drawText('• Malaligned : Braces or Clear Aligner', { x: 60, y, size: 10 });
-    y -= 15;
-    page.drawText('• Receded gums : Gum Surgery', { x: 60, y, size: 10 });
-    y -= 15;
-    page.drawText('• Stains : Cleaning and polishing', { x: 60, y, size: 10 });
-    y -= 15;
-    page.drawText('• Attrition : Filling/Night Guard', { x: 60, y, size: 10 });
-    y -= 15;
-    page.drawText('• Crowns : Get loose/broken crowns checked', { x: 60, y, size: 10 });
+    page.drawText('Based on observations, please visit your dentist for a detailed consultation.', { x: 40, y, font, size: 10 });
 
     const pdfBytes = await pdfDoc.save();
     const dataUri = 'data:application/pdf;base64,' + Buffer.from(pdfBytes).toString('base64');
-
+    
+    // --- FIX: Add access_mode: 'public' to make the PDF downloadable ---
     const uploaded = await cloudinary.uploader.upload(dataUri, {
       resource_type: "raw",
-      type: "upload",          // add this explicitly
       folder: "oralvis-reports",
-      public_id: `report_${sub._id}.pdf`,
-      format: "pdf"
+      public_id: `report_${sub._id}`,
+      format: "pdf",
+      access_mode: 'public' // This makes the file's URL directly accessible
     });
 
     sub.pdfUrl = uploaded.secure_url;
     sub.status = 'reported';
     await sub.save();
     res.json(sub);
+
   }catch(e){
     console.error('report error', e);
     res.status(500).json({ message: e.message });
   }
 });
-// ---------------- PDF download route (fetches from Cloudinary) ----------------
-router.get('/:id/report/download', requireAuth, async (req, res) => {
-  try {
-    const sub = await Submission.findById(req.params.id);
-    if (!sub || !sub.pdfUrl) {
-      return res.status(404).json({ message: 'Report not found' });
-    }
 
-    // Use the exact public_id used at upload
-    const publicId = `oralvis-reports/report_${sub._id}.pdf`;
-
-    // generate signed URL
-    const signedUrl = cloudinary.url(publicId, {
-      resource_type: 'raw',
-      type: 'upload',     // must match upload type
-      sign_url: true,
-      secure: true
-    });
-
-    // fetch the file with axios
-    const resp = await axios.get(signedUrl, { responseType: 'arraybuffer' });
-    const pdfBuffer = Buffer.from(resp.data);
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="report_${sub._id}.pdf"`);
-    res.send(pdfBuffer);
-  } catch (e) {
-    console.error('report download error', e);
-    res.status(500).json({ message: e.message });
-  }
-});
 
 
 module.exports = router;

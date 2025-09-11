@@ -1,6 +1,7 @@
 // frontend/src/components/AdminDashboard.jsx
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { generateAndDownloadPdf } from '../utils/generatePdf';
 
 export default function AdminDashboard() {
   const { authAxios } = useAuth();
@@ -41,20 +42,21 @@ export default function AdminDashboard() {
     }
   };
 
-  const downloadReport = async (id) => {
+  const downloadReport = async (submissionId) => {
     try {
-      const res = await authAxios.get(`/api/submissions/${id}/report/download`, {
-        responseType: 'blob', // important to get raw PDF
-      });
+      // 1. Fetch the full submission details first
+      const res = await authAxios.get(`/api/submissions/${submissionId}`);
+      const fullSubmission = res.data;
 
-      // Create blob and download link
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `report_${id}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      // 2. Check if it's ready for a report
+      if (!fullSubmission.annotatedUpperUrl || !fullSubmission.annotatedFrontUrl || !fullSubmission.annotatedLowerUrl) {
+        alert('This submission has not been fully annotated yet.');
+        return;
+      }
+
+      // 3. Generate the PDF on the client-side
+      generateAndDownloadPdf(fullSubmission);
+
     } catch (err) {
       alert(err.response?.data?.message || err.message);
     }
@@ -88,8 +90,8 @@ export default function AdminDashboard() {
                     </button>
                     {s.pdfUrl && (
                       <button className="btn" onClick={() => downloadReport(s._id)}>
-                        Download Report
-                      </button>
+                      Download Report
+                    </button>
                     )}
                   </div>
                 </div>

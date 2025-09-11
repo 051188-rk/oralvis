@@ -1,6 +1,7 @@
 // frontend/src/components/PatientForm.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { generateAndDownloadPdf } from '../utils/generatePdf';
 
 export default function PatientForm() {
   const { user, authAxios } = useAuth();
@@ -71,21 +72,14 @@ export default function PatientForm() {
     }
   };
 
-  const downloadReport = async (id) => {
-    try {
-      const res = await authAxios.get(`/api/submissions/${id}/report/download`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `report_${id}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (err) {
-      alert(err.response?.data?.message || err.message);
+  const downloadReport = (submission) => {
+    // Check if it's ready for a report
+    if (!submission.annotatedUpperUrl || !submission.annotatedFrontUrl || !submission.annotatedLowerUrl) {
+      alert('Your report is not ready yet. The status must be "annotated" or "reported".');
+      return;
     }
+    // Generate the PDF directly using the submission data
+    generateAndDownloadPdf(submission);
   };
 
   return (
@@ -135,9 +129,9 @@ export default function PatientForm() {
           {mine.map((s) => (
             <div key={s._id} className="submission card">
               <div style={{ display: 'flex', gap: 12 }}>
-                <img src={s.imageUpperUrl} alt="upper" />
-                <img src={s.imageFrontUrl} alt="front" style={{ width: 120 }} />
-                <img src={s.imageLowerUrl} alt="lower" style={{ width: 120 }} />
+                <img src={s.imageUpperUrl} alt="upper" style={{ width: 120, height: 90, objectFit: 'cover' }} />
+                <img src={s.imageFrontUrl} alt="front" style={{ width: 120, height: 90, objectFit: 'cover' }} />
+                <img src={s.imageLowerUrl} alt="lower" style={{ width: 120, height: 90, objectFit: 'cover' }} />
                 <div>
                   <div>
                     <b>{s.patientName}</b> ({s.patientID})
@@ -145,7 +139,7 @@ export default function PatientForm() {
                   <div>Status: {s.status}</div>
                   <div>Uploaded: {new Date(s.createdAt).toLocaleString()}</div>
                   {s.pdfUrl && (
-                    <button className="btn" onClick={() => downloadReport(s._id)}>
+                    <button className="btn" onClick={() => downloadReport(s)}>
                       Download Report
                     </button>
                   )}
