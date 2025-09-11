@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { generateAndDownloadPdf } from '../utils/generatePdf';
+import './PatientForm.css';
 
 export default function PatientForm() {
   const { user, authAxios } = useAuth();
@@ -83,10 +84,10 @@ export default function PatientForm() {
   };
 
   return (
-    <div>
-      <div className="card form">
+    <div className="patient-form-container">
+      <div className="card form-card">
         <h3>Upload Submission (Upper, Front, Lower)</h3>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="patient-form">
           <label>Name</label>
           <input
             name="patientName"
@@ -115,7 +116,7 @@ export default function PatientForm() {
           <input type="file" accept="image/png, image/jpeg" onChange={(e) => handleFile(e, 'front')} />
           <label>Lower Teeth (JPEG/PNG)</label>
           <input type="file" accept="image/png, image/jpeg" onChange={(e) => handleFile(e, 'lower')} />
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 20 }}>
             <button className="btn primary" type="submit">
               Upload
             </button>
@@ -125,25 +126,25 @@ export default function PatientForm() {
 
       <div className="card">
         <h4>My Submissions</h4>
-        <div className="list">
+        <div className="my-submissions-list">
           {mine.map((s) => (
             <div key={s._id} className="submission card">
-              <div style={{ display: 'flex', gap: 12 }}>
-                <img src={s.imageUpperUrl} alt="upper" style={{ width: 120, height: 90, objectFit: 'cover' }} />
-                <img src={s.imageFrontUrl} alt="front" style={{ width: 120, height: 90, objectFit: 'cover' }} />
-                <img src={s.imageLowerUrl} alt="lower" style={{ width: 120, height: 90, objectFit: 'cover' }} />
+              <div className="submission-images">
+                <img src={s.imageUpperUrl} alt="upper" />
+                <img src={s.imageFrontUrl} alt="front" />
+                <img src={s.imageLowerUrl} alt="lower" />
+              </div>
+              <div className="submission-info">
                 <div>
-                  <div>
-                    <b>{s.patientName}</b> ({s.patientID})
-                  </div>
-                  <div>Status: {s.status}</div>
-                  <div>Uploaded: {new Date(s.createdAt).toLocaleString()}</div>
-                  {s.pdfUrl && (
-                    <button className="btn" onClick={() => downloadReport(s)}>
-                      Download Report
-                    </button>
-                  )}
+                  <b>{s.patientName}</b> ({s.patientID})
                 </div>
+                <div>Status: {s.status}</div>
+                <div>Uploaded: {new Date(s.createdAt).toLocaleString()}</div>
+                {s.pdfUrl && (
+                  <button className="btn" onClick={() => downloadReport(s)}>
+                    Download Report
+                  </button>
+                )}
               </div>
             </div>
           ))}

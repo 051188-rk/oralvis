@@ -1,0 +1,92 @@
+/* src/components/PatientForm.css */
+.patient-form-container .form-card {
+    max-width: 700px;
+    margin: 0 auto 40px auto;
+    background: #fff;
+    padding: 30px;
+  }
+  
+  .patient-form-container h3,
+  .patient-form-container h4 {
+    color: #333;
+    text-align: center;
+    margin-bottom: 25px;
+  }
+  
+  .patient-form label {
+    display: block;
+    margin: 12px 0 6px;
+    font-weight: 500;
+    color: #555;
+  }
+  
+  .patient-form input[type='text'],
+  .patient-form input[type='email'],
+  .patient-form textarea {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    box-sizing: border-box;
+    transition: border-color 0.3s ease;
+  }
+  
+  .patient-form input[type='text']:focus,
+  .patient-form input[type='email']:focus,
+  .patient-form textarea:focus {
+    border-color: #e84393;
+    outline: none;
+  }
+  
+  .patient-form input[type='file'] {
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed #ccc;
+    border-radius: 8px;
+    background-color: #fcfcff;
+  }
+  
+  .patient-form textarea {
+    min-height: 80px;
+    resize: vertical;
+  }
+  
+  .my-submissions-list .submission {
+    display: grid; /* Changed to grid for better alignment */
+    grid-template-columns: auto 1fr; /* Two columns: images and info */
+    gap: 20px;
+    align-items: center;
+    padding: 15px;
+    transition: background-color 0.3s ease;
+  }
+  
+  .my-submissions-list .submission:hover {
+    background-color: #fdfcff;
+  }
+  
+  .my-submissions-list .submission-images {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .my-submissions-list .submission img {
+    width: 130px;
+    height: 95px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #eee;
+  }
+  
+  .my-submissions-list .submission-info div {
+    margin-bottom: 4px;
+    color: #666;
+  }
+  
+  .my-submissions-list .submission-info b {
+    color: #e84393;
+    font-size: 1.1em;
+  }
+  
+  .my-submissions-list .submission-info .btn {
+    margin-top: 10px;
+  }

@@ -1,0 +1,73 @@
+/* src/components/AdminDashboard.css */
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  
+  .submission-card {
+    display: flex;
+    gap: 25px;
+    padding: 20px;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    background-color: #fff;
+    align-items: flex-start;
+  }
+  
+  .submission-images {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .submission-images img {
+    width: 150px;
+    height: 110px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+  }
+  
+  .submission-details {
+    flex: 1;
+  }
+  
+  .submission-details b {
+    color: #e84393;
+    font-size: 1.1em;
+  }
+  
+  .submission-details div {
+    margin-bottom: 5px;
+    color: #666;
+  }
+  
+  .submission-controls {
+    margin-top: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .annotated-images {
+    width: 150px; /* Reduced width */
+    flex-shrink: 0;
+  }
+  
+  .annotated-images h5 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #555;
+    font-size: 1em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+  }
+  
+  .annotated-images img {
+    width: 100%;
+    height: auto; /* Maintain aspect ratio */
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ccc;
+  }

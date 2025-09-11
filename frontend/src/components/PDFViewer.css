@@ -1,0 +1,12 @@
+/* src/components/PDFViewer.css */
+.pdf-viewer-card h3 {
+    color: #333;
+    margin-bottom: 15px;
+  }
+  
+  .pdf-viewer-card iframe {
+    width: 100%;
+    height: 80vh;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }

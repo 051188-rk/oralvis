@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { generateAndDownloadPdf } from '../utils/generatePdf';
+import './AdminDashboard.css';
 
 export default function AdminDashboard() {
   const { authAxios } = useAuth();
@@ -56,61 +57,50 @@ export default function AdminDashboard() {
 
       // 3. Generate the PDF on the client-side
       generateAndDownloadPdf(fullSubmission);
-
     } catch (err) {
       alert(err.response?.data?.message || err.message);
     }
   };
 
   return (
-    <div>
+    <div className="dashboard-container">
       <h3>Admin Dashboard</h3>
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          {subs.map((s) => (
-            <div key={s._id} className="card" style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <img src={s.imageUpperUrl} style={{ width: 120 }} alt="upper" />
-                  <img src={s.imageFrontUrl} style={{ width: 120 }} alt="front" />
-                  <img src={s.imageLowerUrl} style={{ width: 120 }} alt="lower" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div>
-                    <b>{s.patientName}</b> ({s.patientID})
-                  </div>
-                  <div>Status: {s.status}</div>
-                  <div>Uploaded: {new Date(s.createdAt).toLocaleString()}</div>
-                  <div className="controls" style={{ marginTop: 8 }}>
-                    <button className="btn" onClick={() => autoAnnotate(s._id)}>
-                      Auto Annotate (Python)
-                    </button>
-                    <button className="btn" onClick={() => generateReport(s._id)}>
-                      Generate PDF (Server)
-                    </button>
-                    {s.pdfUrl && (
-                      <button className="btn" onClick={() => downloadReport(s._id)}>
-                      Download Report
-                    </button>
-                    )}
-                  </div>
-                </div>
-                <div style={{ width: 260 }}>
-                  <h5>Annotated</h5>
-                  {s.annotatedUpperUrl && (
-                    <img src={s.annotatedUpperUrl} style={{ width: 220 }} alt="ann upper" />
-                  )}
-                  {s.annotatedFrontUrl && (
-                    <img src={s.annotatedFrontUrl} style={{ width: 220 }} alt="ann front" />
-                  )}
-                  {s.annotatedLowerUrl && (
-                    <img src={s.annotatedLowerUrl} style={{ width: 220 }} alt="ann lower" />
-                  )}
-                </div>
+      <div>
+        {subs.map((s) => (
+          <div key={s._id} className="submission-card">
+            <div className="submission-images">
+              <img src={s.imageUpperUrl} alt="upper" />
+              <img src={s.imageFrontUrl} alt="front" />
+              <img src={s.imageLowerUrl} alt="lower" />
+            </div>
+            <div className="submission-details">
+              <div>
+                <b>{s.patientName}</b> ({s.patientID})
+              </div>
+              <div>Status: {s.status}</div>
+              <div>Uploaded: {new Date(s.createdAt).toLocaleString()}</div>
+              <div className="submission-controls">
+                <button className="btn" onClick={() => autoAnnotate(s._id)}>
+                  Auto Annotate
+                </button>
+                <button className="btn" onClick={() => generateReport(s._id)}>
+                  Generate PDF
+                </button>
+                {s.pdfUrl && (
+                  <button className="btn primary" onClick={() => downloadReport(s._id)}>
+                    Download Report
+                  </button>
+                )}
               </div>
             </div>
-          ))}
-        </div>
+            <div className="annotated-images">
+              <h5>Annotated</h5>
+              {s.annotatedUpperUrl && <img src={s.annotatedUpperUrl} alt="ann upper" />}
+              {s.annotatedFrontUrl && <img src={s.annotatedFrontUrl} alt="ann front" />}
+              {s.annotatedLowerUrl && <img src={s.annotatedLowerUrl} alt="ann lower" />}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
